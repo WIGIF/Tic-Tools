@@ -1,16 +1,18 @@
 #!/usr/bin/python3
 
-import subprocess
-import threading
-from os import system,mkdir
+from argparse import ArgumentParser
+from sys import argv
 from datetime import datetime
 from random import choices
 from time import sleep
+from os import mkdir
+from threading import Thread
+from subprocess import run,PIPE,DEVNULL
 
 
-class VolThread(threading.Thread):
+class VolThread(Thread):
 	def __init__(self,file,profil,cmd,outdir):
-		threading.Thread.__init__(self)
+		Thread.__init__(self)
 		self.file = file
 		self.profil = profil
 		self.cmd = cmd
@@ -19,66 +21,72 @@ class VolThread(threading.Thread):
 	
 	def run(self):
 		try:
-			self.result = subprocess.run(['vol2', f'-f {self.file}',f'--profil={self.profil}',self.cmd],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL).stdout.decode()
+			self.result = run([VOL2_PATH, f'-f {self.file}',f'--profil={self.profil}',self.cmd],stdout=PIPE,stderr=DEVNULL).stdout.decode()
 			if self.result == '': raise Exception()
 			with open(self.outdir + self.cmd,'w') as file:
 				file.write(self.result)
-			print(self.cmd + ' : \x1b[32m\x1b[1mDONE\x1b[0m')
+			print(f'{self.cmd:12s} : \x1b[32m\x1b[1mDONE\x1b[0m')
 		except:
-			print(self.cmd + ' : \x1b[31m\x1b[1mERROR\x1b[0m')
-
-
-def main(argv):
-
-	print("""	
-.-.   .-.,---.  ,---.    .---.  .--.  _______ ,-.,-.    ,-. _______.-.   .-.
- \ \ / / | .-'  | .-.\  ( .-._)/ /\ \|__   __||(|| |    |(||__   __|\ \_/ )/
-  \ V /  | `-.  | `-'/ (_) \  / /__\ \ )| |   (_)| |    (_)  )| |    \   (_)
-   ) /   | .-'  |   (  _  \ \ |  __  |(_) |   | || |    | | (_) |     ) (   
-  (_)    |  `--.| |\ \( `-'  )| |  |)|  | |   | || `--. | |   | |     | |   
-         /( __.'|_| \)\`----' |_|  (_)  `-'   `-'|( __.'`-'   `-'    /(_|   
-        (__)        (__)                         (_)                (__)    
-
-	""")
-
-
-	input_file = '/home/axonarage/test/ch2.dmp'
-	profil = KDBG(input_file)
-
-	nonce = ''.join(choices('0123456789abcdef',k=2))
-	outdir = f'/tmp/vol_{nonce}_{datetime.now().strftime("%d:%m_%Hh%M")}/'
-	mkdir(outdir)
-	print(f'Out : \x1b[1m{outdir}\x1b[0m')
-
-	th_list = []
-	cmd_list = cmd_menu()
-
-	th_count = 0
-	max_thread = 2
-	for cmd in cmd_list :
-		while th_count > max_thread :
-			sleep(2)
-			th_count = check_th(th_list)
-		th_list.append(VolThread(input_file,profil,cmd,outdir))
-		th_list[-1].start()
-		th_count += 1
+			print(f'{self.cmd:12s} : \x1b[31m\x1b[1mERROR\x1b[0m')
 
 
 def KDBG(file):
 	print('Determining profile ...')
-	cmd = subprocess.run(['vol2', f'-f {file}','imageinfo'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+	cmd = run([VOL2_PATH, f'-f {file}','imageinfo'],stdout=PIPE,stderr=DEVNULL)
 	pf = cmd.stdout.decode().replace('  ','').split(' ')[3][:-1]
-	print(f'Profile FOUND : \x1b[34m\x1b[1m{pf}\x1b[0m')
+	print(f'Profile FOUND : {pf}')
 	return pf
 
-def check_th(th_list):
+def check_th(thread_list):
+	"""
+		Check how many threads are alive
+	"""
 	alive_th = 0
-	for th in th_list:
+	for th in thread_list:
 		if th.is_alive():
 			alive_th += 1
 	return alive_th
 
-def cmd_menu():
-	return ['clipboard','cmdline','consoles','envars','filescan','hashdump','hivelist','iehistory','mftparser','notepad','psscan','pstree','psxview','truecryptsummary']
+def cmd_menu(all):
+	if not all : return['cmdline','consoles','envars','filescan','hashdump','psscan','pstree']
+	return ['clipboard','cmdline','consoles','envars','filescan','hashdump','hivelist','iehistory','lsadump','malfind','mftparser','notepad','psscan','pstree','psxview','sockets','truecryptsummary']
 
-main('ts')
+if __name__ == "__main__" :
+	
+	VOL2_PATH = "vol2"
+
+	parser = ArgumentParser()
+	parser.add_argument("-f", help="Input file", type=str, required=True)
+	parser.add_argument("-p","--profil", help="OS Profile", type=str, required=('-k' not in argv and '--kdbg' not in argv))
+	parser.add_argument("-k","--kdbg", help="Find profile using KDBG", action="store_true")
+	parser.add_argument("-a", help="Use all commands", type=str,action="store_true")
+	parser.add_argument("-t", help="Max threads", type=str, default=3)
+	parser.add_argument("-o", help="Output directory", type=str)
+	args = parser.parse_args()
+
+	input_file = args.f
+	if args.kdbg : profil = KDBG(input_file)
+	else : profil = args.profil
+
+	if args.o : 
+		outdir = args.o
+		if outdir[-1] != '/' : outdir += '/'
+	else:
+		nonce = ''.join(choices('0123456789abcdef',k=2))
+		outdir = f'/tmp/vol_{nonce}_{datetime.now().strftime("%d:%m_%Hh%M")}/'
+		mkdir(outdir)
+		print(f'Out dir : {outdir}')
+	
+	if args.a : cmd_list = cmd_menu(True)
+	else : cmd_list = cmd_menu(False)
+
+	thread_count = 0
+	thread_list = []
+
+	for cmd in cmd_list :
+		while thread_count > args.t :
+			sleep(2)
+			thread_count = check_th(thread_list)
+		thread_list.append(VolThread(input_file,profil,cmd,outdir))
+		thread_list[-1].start()
+		thread_count += 1
