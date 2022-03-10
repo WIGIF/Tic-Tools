@@ -20,15 +20,26 @@ class VolThread(Thread):
 		self.result = ''
 	
 	def run(self):
+		global done_count
 		try:
 			self.result = run([VOL2_PATH, f'-f {self.file}',f'--profil={self.profil}',self.cmd],stdout=PIPE,stderr=DEVNULL).stdout.decode()
 			if self.result == '': raise Exception()
 			with open(self.outdir + self.cmd,'w') as file:
 				file.write(self.result)
+			print('\x1b[1A\x1b[2K',end='')
 			print(f'{self.cmd:12s} : \x1b[32m\x1b[1mDONE\x1b[0m')
 		except:
+			print('\x1b[1A\x1b[2K',end='')
 			print(f'{self.cmd:12s} : \x1b[31m\x1b[1mERROR\x1b[0m')
+		done_count += 1
+		print(f"[{(done_count*'■' + ' '*len(cmd_list))[:len(cmd_list)]}] {done_count} / {len(cmd_list)}")
 
+
+def report(file,profil):
+	CP_name = run([VOL2_PATH, f'-f {file}',f'--profil={profil}',"printkey -K" ,"ControlSet001\\Control\\ComputerName\\ActiveComputerName"],stdout=PIPE,stderr=DEVNULL).stdout.decode()[39:]
+	print(CP_name)
+	USR_lst = run([VOL2_PATH, f'-f {file}',f'--profil={profil}',"hashdump"],stdout=PIPE,stderr=DEVNULL).stdout.decode()
+	print(USR_lst,end='')
 
 def KDBG(file):
 	print('Determining profile ...')
@@ -48,7 +59,7 @@ def check_th(thread_list):
 	return alive_th
 
 def cmd_menu(all):
-	if not all : return['cmdline','consoles','envars','filescan','hashdump','psscan','pstree']
+	if not all : return ['cmdline','consoles','envars','filescan','hashdump','psscan','pstree']
 	return ['clipboard','cmdline','consoles','envars','filescan','hashdump','hivelist','iehistory','lsadump','malfind','mftparser','notepad','psscan','pstree','psxview','sockets','truecryptsummary']
 
 if __name__ == "__main__" :
@@ -59,7 +70,7 @@ if __name__ == "__main__" :
 	parser.add_argument("-f", help="Input file", type=str, required=True)
 	parser.add_argument("-p","--profil", help="OS Profile", type=str, required=('-k' not in argv and '--kdbg' not in argv))
 	parser.add_argument("-k","--kdbg", help="Find profile using KDBG", action="store_true")
-	parser.add_argument("-a", help="Use all commands", type=str,action="store_true")
+	parser.add_argument("-a", help="Use all commands",action="store_true")
 	parser.add_argument("-t", help="Max threads", type=str, default=3)
 	parser.add_argument("-o", help="Output directory", type=str)
 	args = parser.parse_args()
@@ -79,9 +90,15 @@ if __name__ == "__main__" :
 	
 	if args.a : cmd_list = cmd_menu(True)
 	else : cmd_list = cmd_menu(False)
+	
+	report(input_file,profil)
+	
+	print("\n----------------------------\nStart scan...\n")
+	print(f"[{' '*len(cmd_list)}] 0 / {len(cmd_list)}")
 
 	thread_count = 0
 	thread_list = []
+	done_count = 0
 
 	for cmd in cmd_list :
 		while thread_count > args.t :
