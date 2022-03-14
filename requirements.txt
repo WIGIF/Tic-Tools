@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+# You can find here all the requirements needed in order to use Tic-Tools
+# Note : You may change pip by pip3
+
+
+pip install factordb-python
+pip install pycrypto
+sudo apt-get -y install openssl
